@@ -1,0 +1,30 @@
+global:
+    scrape_interval: 5s # 每 5 秒抓一次 (高精度监控)
+    evaluation_interval: 5s
+
+scrape_configs:
+    - job_name: "node_exporter"
+      static_configs:
+          - targets: ["node-exporter:9100"] # 指向同一个 Docker 网络下的 node-exporter
+    # ✅ 新增 MySQL 任务
+    - job_name: "mysql"
+      static_configs:
+          # 直接填 exporter 的容器名
+          - targets: ["mysqld-exporter:9104"]
+      # ✅ 新增：抓取 cAdvisor 数据 (容器粒度监控)
+    - job_name: "cadvisor"
+      static_configs:
+          - targets: ["my-monitor:8080"] # 这里填你 cAdvisor 容器的名字和端口
+    # ✅ 新增 Windows 宿主机任务
+    # - job_name: "server-b-windows"
+    #   static_configs:
+    #       # ⚠️ 重点：这里必须填 B 机的【局域网 IP】，不能填 localhost
+    #       # 因为 Prometheus 在容器里，localhost 是容器自己
+    #       - targets: ["192.168.31.230:9182"]
+# 下载：
+# 去 GitHub Release 下载 windows_exporter-0.x.x-amd64.msi。
+# 安装：
+# 直接双击 MSI 文件安装。它会自动启动一个 Windows 服务，监听 9182 端口。
+# 验证方法： 浏览器访问 http://localhost:9182/metrics，有数据就是成功了。
+# 配置 Prometheus (回到 monitor_system 目录)：
+# 再次修改 prometheus.yml，把 Windows 宿主机加进去。

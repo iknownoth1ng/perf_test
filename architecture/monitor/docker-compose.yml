@@ -1,0 +1,107 @@
+version: "3.8"
+
+services:
+    # 1. 数据采集器 (替代 htop/iostat)
+    node-exporter:
+        image: prom/node-exporter:latest
+        container_name: node-exporter
+        restart: unless-stopped
+        volumes:
+            - /proc:/host/proc:ro
+            - /sys:/host/sys:ro
+            - /:/rootfs:ro
+        command:
+            - "--path.procfs=/host/proc"
+            - "--path.sysfs=/host/sys"
+            - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+        expose:
+            - 9100
+        networks:
+            - global-monitor-net
+
+    # 2. 时序数据库
+    prometheus:
+        image: prom/prometheus:latest
+        container_name: prometheus
+        restart: unless-stopped
+        ports:
+            - "9090:9090"
+        volumes:
+            - ../../configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml # 挂载配置文件
+            # - prometheus_data:/prometheus # 持久化存储数据
+            - ../../data/prometheus:/prometheus # 挂载到当前目录下的 data/prometheus 文件夹
+        command:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--storage.tsdb.path=/prometheus"
+            - "--storage.tsdb.retention.time=15d" # 数据保留15天
+        networks:
+            - global-monitor-net
+    # 3. 炫酷仪表盘
+    grafana:
+        image: grafana/grafana:latest
+        container_name: grafana
+        restart: unless-stopped
+        ports:
+            - "3000:3000"
+        volumes:
+            # ❌ 删掉：- grafana_data:/var/lib/grafana
+            # ✅ 改为：挂载到当前目录下的 data/grafana 文件夹
+            - ../../data/grafana:/var/lib/grafana
+        environment:
+            - GF_SECURITY_ADMIN_PASSWORD=admin # 初始密码
+        networks:
+            - global-monitor-net
+
+    # ✅ 新增：cAdvisor 服务
+    cadvisor:
+        # Windows/WSL2 推荐用 zcube 镜像，兼容性最好
+        # image: zcube/cadvisor:latest
+        image: gcr.io/cadvisor/cadvisor:latest
+        container_name: my-monitor
+        restart: unless-stopped
+        privileged: true
+        # 关键：Windows 下必须挂载这些目录
+        volumes:
+            - /:/rootfs:ro
+            - /var/run:/var/run:ro
+            - /sys:/sys:ro
+            - /var/lib/docker/:/var/lib/docker:ro
+            - /sys/fs/cgroup:/sys/fs/cgroup:ro
+            # 如果你是 Windows Docker Desktop，可能还需要这个来读磁盘信息
+            - /dev/disk/:/dev/disk:ro
+        ports:
+            - "8083:8080" # 外部访问用 8083，内部还是 8080
+        devices:
+            - /dev/kmsg
+        networks:
+            - global-monitor-net
+    # ✅ 新增：MySQL 监控器
+    mysqld-exporter:
+        image: prom/mysqld-exporter:latest
+        container_name: mysqld-exporter
+        restart: unless-stopped
+        # environment:
+        # 格式：用户:密码@(容器名:3306)/
+        # 注意：这里的 host 填 'my-mysql'，因为它们现在在一个网里了
+        # DATA_SOURCE_NAME: exporter:password@(my-mysql:3306)/
+        # ❌ 删除之前的 environment: DATA_SOURCE_NAME...
+        # ✅ 改用 volumes 挂载配置文件
+        volumes:
+            - ../../configs/mysql/my.cnf:/.my.cnf:ro # 把本地的 my.cnf 挂载到容器内
+        networks:
+            - global-monitor-net
+        command:
+            # 开启 InnoDB 核心指标 (这是看 I/O 图表的关键！)
+            - "--collect.info_schema.innodb_metrics"
+            # 开启进程列表监控 (可选)
+            - "--collect.info_schema.processlist"
+            # 开启表空间大小监控 (可选)
+            - "--collect.info_schema.tables"
+            # 开启基础状态 (默认其实是开启的，写上也无妨)
+            - "--collect.global_status"
+            - "--collect.global_variables"
+
+# 在文件最底部声明网络
+networks:
+    global-monitor-net:
+        external: true

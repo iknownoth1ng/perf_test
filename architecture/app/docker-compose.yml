@@ -1,0 +1,208 @@
+version: "3.8"
+
+services:
+    # 1. 探针提供者 (Init Container)
+    # 它的作用仅仅是：启动 -> 把 agent.jar 复制到共享目录 -> 退出
+    agent-provider:
+        # image: apache/skywalking-java-agent:8.16.0-java8
+        # ✅ 改为：
+        image: apache/skywalking-java-agent:9.0.0-java8
+        container_name: agent-provider
+        command: /bin/sh -c "cp -r /skywalking/agent /shared/"
+        volumes:
+            - agent_data:/shared # 挂载到共享卷
+
+        # 2. 受害者应用 (Tomcat)
+        # my-tomcat:
+        #     # image: tomcat:9.0
+        #     # ❌ 旧的：image: tomcat:9.0 (这个标签不固定 Java 版本，可能拉到最新的预览版)
+        #     # ✅ 改为：指定使用 JDK 8
+        #     image: tomcat:9.0-jdk8-corretto
+        #     container_name: my-tomcat
+        #     restart: always
+        #     depends_on:
+        #         agent-provider:
+        #             condition: service_completed_successfully # 等上面那个搬运工干完活再启动
+        #     ports:
+        #         - "8080:8080"
+        #     volumes:
+        #         - agent_data:/skywalking-agent # 读取共享卷里的探针
+        #     environment:
+        #         # 【核心魔法】通过环境变量注入探针
+        #         # 告诉 Java：启动时加载这个 jar 包
+        #         JAVA_OPTS: >-
+        #             -javaagent:/skywalking-agent/agent/skywalking-agent.jar
+        #             -Dskywalking.agent.service_name=my-tomcat-server
+        #             -Dskywalking.collector.backend_service=skywalking-oap:11800
+        #             -XX:+HeapDumpOnOutOfMemoryError
+        #             -XX:HeapDumpPath=/tmp/oom_dump.hprof
+        #     networks:
+        #         - global-monitor-net # 必须和 SkyWalking OAP 在同一个网络
+    # --- Tomcat 节点 1 ---
+    # tomcat-1:
+    #     image: tomcat:9.0-jdk8-corretto
+    #     container_name: tomcat-1
+    #     restart: always
+    #     depends_on:
+    #         agent-provider:
+    #             condition: service_completed_successfully
+    #     # 端口映射：外部用 8081
+    #     ports:
+    #         - "8081:8080"
+    #     volumes:
+    #         - agent_data:/skywalking-agent
+    #     environment:
+    #         # JAVA_OPTS: >-
+    #         # CATALINA_OPTS: >-
+    #         JAVA_TOOL_OPTIONS: >-
+    #             -javaagent:/skywalking-agent/agent/skywalking-agent.jar
+    #             -Dskywalking.agent.service_name=my-cluster-service
+    #             -Dskywalking.collector.backend_service=skywalking-oap:11800
+    #             -XX:+HeapDumpOnOutOfMemoryError
+    #             -XX:HeapDumpPath=/tmp/oom_dump.hprof
+    #             -Dskywalking.agent.instance_name=tomcat-node-01
+    #             -Xbootclasspath/a:/usr/local/tomcat/bin/tomcat-juli.jar
+    #     networks:
+    #         - global-monitor-net
+
+    # # --- Tomcat 节点 2 (复制粘贴，改名) ---
+    # tomcat-2:
+    #     image: tomcat:9.0-jdk8-corretto
+    #     container_name: tomcat-2
+    #     restart: always
+    #     depends_on:
+    #         agent-provider:
+    #             condition: service_completed_successfully
+    #     # 端口映射：外部用 8082
+    #     ports:
+    #         - "8082:8080"
+    #     volumes:
+    #         - agent_data:/skywalking-agent
+    #     environment:
+    #         # JAVA_OPTS: >-
+    #         # CATALINA_OPTS: >-
+    #         JAVA_TOOL_OPTIONS: >-
+    #             -javaagent:/skywalking-agent/agent/skywalking-agent.jar
+    #             -Dskywalking.agent.service_name=my-cluster-service
+    #             -Dskywalking.collector.backend_service=skywalking-oap:11800
+    #             -XX:+HeapDumpOnOutOfMemoryError
+    #             -XX:HeapDumpPath=/tmp/oom_dump.hprof
+    #             -Dskywalking.agent.instance_name=tomcat-node-02
+    #             -Xbootclasspath/a:/usr/local/tomcat/bin/tomcat-juli.jar
+    #     networks:
+    #         - global-monitor-net
+
+    # 2. 应用节点 1 (替代 tomcat-1)
+    app-1:
+        build: . # 使用当前目录的 Dockerfile 构建
+        container_name: app-1
+        restart: always
+        depends_on:
+            agent-provider:
+                condition: service_completed_successfully
+        ports:
+            - "8081:8001"
+        volumes:
+            - agent_data:/skywalking-agent # 挂载探针
+        environment:
+            # 注入 SkyWalking 探针
+            JAVA_TOOL_OPTIONS: >-
+                -javaagent:/skywalking-agent/agent/skywalking-agent.jar
+                -Dskywalking.agent.service_name=my-springboot-service
+                -Dskywalking.collector.backend_service=skywalking-oap:11800
+                -Dskywalking.agent.instance_name=springboot-node-01
+                -XX:+HeapDumpOnOutOfMemoryError
+                -XX:HeapDumpPath=/tmp/oom.hprof
+        networks:
+            - global-monitor-net
+
+    # 3. 应用节点 2 (替代 tomcat-2)
+    app-2:
+        build: .
+        container_name: app-2
+        restart: always
+        depends_on:
+            agent-provider:
+                condition: service_completed_successfully
+        ports:
+            - "8082:8001"
+        volumes:
+            - agent_data:/skywalking-agent
+        environment:
+            JAVA_TOOL_OPTIONS: >-
+                -javaagent:/skywalking-agent/agent/skywalking-agent.jar
+                -Dskywalking.agent.service_name=my-springboot-service
+                -Dskywalking.collector.backend_service=skywalking-oap:11800
+                -Dskywalking.agent.instance_name=springboot-node-02
+                -XX:+HeapDumpOnOutOfMemoryError
+                -XX:HeapDumpPath=/tmp/oom.hprof
+        networks:
+            - global-monitor-net
+
+    # --- 负载均衡器 (Nginx) ---
+    lb-nginx:
+        image: nginx:latest
+        container_name: lb-nginx
+        restart: always
+        ports:
+            - "8086:80" # 对外统一入口是 80
+        volumes:
+            - ../../configs/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+        depends_on:
+            # - tomcat-1
+            # - tomcat-2
+            - app-1
+            - app-2
+        networks:
+            - global-monitor-net
+    # ✅ 新增：Redis 缓存
+    my-redis:
+        image: redis:7.0
+        container_name: my-redis
+        restart: always
+        ports:
+            - "6379:6379"
+        networks:
+            - global-monitor-net
+
+    db:
+        image: mysql:8.0
+        container_name: my-mysql
+        ports:
+            - "3306:3306"
+        environment:
+            MYSQL_ROOT_PASSWORD: root # 密码是 root
+            MYSQL_DATABASE: perftest # 自动创建一个叫 perftest 的库
+        # 强制把缓冲池限制在 5MB (非常小，甚至存不下 10万条数据)
+        # command: --default-authentication-plugin=mysql_native_password --innodb_buffer_pool_size=5M
+        command: --default-authentication-plugin=mysql_native_password
+        volumes:
+            # ❌ 删掉这一行：- ./data:/var/lib/mysql
+            # ✅ 改成下面这样：
+            - ../../data/mysql:/var/lib/mysql
+            - ../../configs/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+        # 资源限制：先不限，火力全开
+        mem_limit: 500m
+        networks:
+            - global-monitor-net # ✅ 加入公共网络
+        # ✅ 新增：RabbitMQ
+    my-rabbitmq:
+        image: rabbitmq:3-management
+        container_name: my-rabbitmq
+        restart: always
+        ports:
+            - "5672:5672" # 通信端口
+            - "15672:15672" # 网页管理后台端口
+        environment:
+            RABBITMQ_DEFAULT_USER: admin
+            RABBITMQ_DEFAULT_PASS: admin
+        networks:
+            - global-monitor-net
+
+# ✅ 在文件最底部增加这一块
+volumes:
+    agent_data:
+
+networks:
+    global-monitor-net:
+        external: true
