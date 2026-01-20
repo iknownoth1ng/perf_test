@@ -1,0 +1,44 @@
+# 1. RabbitMQ Service
+apiVersion: v1
+kind: Service
+metadata:
+    name: rabbitmq-svc # ⚠️ Java 代码里要填这个名字
+spec:
+    type: LoadBalancer # 为了访问管理后台
+    ports:
+        - name: amqp
+          port: 5672
+          targetPort: 5672
+        - name: management
+          port: 15672
+          targetPort: 15672
+    selector:
+        app: rabbitmq-k8s
+
+---
+# 2. RabbitMQ Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: rabbitmq-deploy
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            app: rabbitmq-k8s
+    template:
+        metadata:
+            labels:
+                app: rabbitmq-k8s
+        spec:
+            containers:
+                - name: rabbitmq
+                  image: rabbitmq:3-management
+                  env:
+                      - name: RABBITMQ_DEFAULT_USER
+                        value: "admin"
+                      - name: RABBITMQ_DEFAULT_PASS
+                        value: "admin"
+                  ports:
+                      - containerPort: 5672
+                      - containerPort: 15672

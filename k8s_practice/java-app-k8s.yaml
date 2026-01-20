@@ -1,0 +1,68 @@
+# 1. 定义 Service (Java 应用的入口)
+apiVersion: v1
+kind: Service
+metadata:
+    name: java-app-svc
+spec:
+    type: LoadBalancer # 暴露到宿主机端口
+    selector:
+        app: java-app
+    ports:
+        - protocol: TCP
+          port: 8001 # 外部访问端口 (比如 http://localhost:8001)
+          targetPort: 8001 # 容器内部端口
+
+---
+# 2. 定义 Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: java-app-deploy
+spec:
+    replicas: 2 # 咱们直接启动 2 个副本，做负载均衡！
+    selector:
+        matchLabels:
+            app: java-app
+    template:
+        metadata:
+            labels:
+                app: java-app
+        spec:
+            containers:
+                - name: java-app
+                  image: my-java-app:v1 # ✅ 这里填你刚才 tag 的镜像名
+                  imagePullPolicy: Never # ✅ 关键！只用本地镜像，不去网上下
+                  ports:
+                      - containerPort: 8001
+                      # 👇👇👇 新增这块 👇👇👇
+                  resources:
+                      requests:
+                          cpu: "100m" # 申请 0.1 核 CPU
+                      limits:
+                          cpu: "500m" # 最多用 0.5 核 CPU
+                      # 👆👆👆 新增结束 👆👆👆
+                  # 👇 这里覆盖配置文件里的数据库连接
+                  env:
+                      # 1. MySQL 配置
+                      - name: SPRING_DATASOURCE_URL
+                        value: "jdbc:mysql://mysql-svc:3306/perftest?useSSL=false&allowPublicKeyRetrieval=true"
+                      - name: SPRING_DATASOURCE_USERNAME
+                        value: "root"
+                      - name: SPRING_DATASOURCE_PASSWORD
+                        value: "root"
+
+                      # 2. Redis 配置 (Host 填 Service Name)
+                      - name: SPRING_DATA_REDIS_HOST
+                        value: "redis-svc"
+                      - name: SPRING_DATA_REDIS_PORT
+                        value: "6379"
+
+                      # 3. RabbitMQ 配置 (Host 填 Service Name)
+                      - name: SPRING_RABBITMQ_HOST
+                        value: "rabbitmq-svc"
+                      - name: SPRING_RABBITMQ_PORT
+                        value: "5672"
+                      - name: SPRING_RABBITMQ_USERNAME
+                        value: "admin"
+                      - name: SPRING_RABBITMQ_PASSWORD
+                        value: "admin"

@@ -1,0 +1,66 @@
+# 1. 定义存储 (PVC) - 申请 1GB 硬盘空间
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+    name: mysql-pvc
+spec:
+    accessModes:
+        - ReadWriteOnce
+    resources:
+        requests:
+            storage: 1Gi
+
+---
+# 2. 定义服务 (Service) - 这是 MySQL 的“内网域名”
+apiVersion: v1
+kind: Service
+metadata:
+    name: mysql-svc # ⚠️ 记住这个名字，Java 代码里要填它！
+spec:
+    ports:
+        - port: 3306
+    selector:
+        app: mysql-k8s # 只要是贴了这个标签的 Pod，都是我的后端
+
+---
+# 3. 定义部署 (Deployment) - 实际运行的数据库
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: mysql-deploy
+spec:
+    selector:
+        matchLabels:
+            app: mysql-k8s
+    strategy:
+        type: Recreate # 数据库不能多副本并发启动，必须杀旧起新
+    template:
+        metadata:
+            labels:
+                app: mysql-k8s
+        spec:
+            containers:
+                - image: mysql:8.0
+                  name: mysql
+                  env:
+                      - name: MYSQL_ROOT_PASSWORD
+                        value: "root"
+                      - name: MYSQL_DATABASE
+                        value: "perftest"
+                  ports:
+                      - containerPort: 3306
+                        name: mysql
+                  volumeMounts:
+                      - name: mysql-persistent-storage
+                        mountPath: /var/lib/mysql
+                        # ✅ 新增挂载：把 SQL 脚本挂进去
+                      - name: mysql-init-volume
+                        mountPath: /docker-entrypoint-initdb.d
+            volumes:
+                - name: mysql-persistent-storage
+                  persistentVolumeClaim:
+                      claimName: mysql-pvc # 绑定上面的 PVC
+                      # ✅ 新增卷：引用 ConfigMap
+                - name: mysql-init-volume
+                  configMap:
+                      name: mysql-init-scripts

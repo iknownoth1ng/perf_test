@@ -1,0 +1,42 @@
+version: "3.8"
+
+services:
+    # 1. 压测数据存储库
+    jmeter-influxdb:
+        image: influxdb:1.8
+        container_name: jmeter-influxdb
+        environment:
+            - INFLUXDB_DB=jmeter # 自动创建一个叫 jmeter 的库
+        ports:
+            - "8086:8086"
+        networks:
+            - global-monitor-net # 加入公共网络，方便和 Grafana 通信
+
+    # 2. JMeter Master (指挥官)
+    jmeter-master:
+        image: runcare/jmeter-master
+        container_name: jmeter-master
+        tty: true
+        volumes:
+            - ../../scripts/jmeter:/jmeter/scripts # 挂载脚本目录
+            - ../../data/results:/jmeter/results # 挂载结果目录
+        networks:
+            - global-monitor-net
+        environment:
+            - SSL_DISABLED=true # 必须关闭 SSL，否则分布式连接极其麻烦
+
+    # 3. JMeter Slave (打手 - 支持一键扩容)
+    jmeter-slave:
+        image: runcare/jmeter-slave
+        # 注意：这里不写 container_name，方便我们用 --scale 扩容
+        environment:
+            - SSL_DISABLED=true
+        networks:
+            - global-monitor-net
+        depends_on:
+            - jmeter-master
+
+# 使用已存在的公共网络
+networks:
+    global-monitor-net:
+        external: true

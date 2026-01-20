@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+    jenkins:
+        # 使用带 Blue Ocean 插件的版本，界面更好看
+        # image: jenkinsci/blueocean:latest
+        # ✅ 换成官方最新的 LTS 版本 (JDK 17)
+        image: jenkins/jenkins:lts-jdk17
+        container_name: my-jenkins
+        user: root # ⚠️ 关键：使用 root 权限，否则在容器里无法操作宿主机的 Docker
+        restart: always
+        ports:
+            - "8089:8080" # 外部访问端口 (避开 8080/8088)
+            - "50000:50000"
+        environment:
+            # - JAVA_OPTS=-Djenkins.install.runSetupWizard=false # 跳过初始设置向导
+            - JAVA_OPTS=-Dhudson.model.DirectoryBrowserSupport.CSP="" # 解决 CSP 安全策略问题（HTML 报告显示不全的通病）
+        volumes:
+            - ../../data/jenkins_data:/var/jenkins_home # 数据持久化
+            # 🔥 核心魔法：把宿主机的 Docker 里的 socket 挂载进去
+            # 这样 Jenkins 容器里敲 docker 命令，实际是在操作 B 机宿主机
+            - /var/run/docker.sock:/var/run/docker.sock
+        networks:
+            - global-monitor-net
+
+volumes:
+    jenkins_data:
+
+networks:
+    global-monitor-net:
+        external: true
