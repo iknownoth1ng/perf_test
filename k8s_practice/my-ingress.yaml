@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+    name: my-gateway
+    annotations:
+        # 兼容旧版控制器
+        kubernetes.io/ingress.class: nginx
+spec:
+    # 兼容新版控制器
+    ingressClassName: nginx
+    rules:
+        - host: app.k8s.test
+          http:
+              paths:
+                  - path: /
+                    pathType: Prefix
+                    backend:
+                        service:
+                            name: java-app-svc
+                            port:
+                                number: 8002
+              # 2. 访问 RabbitMQ 后台
+        - host: mq.k8s.test
+          http:
+              paths:
+                  - path: /
+                    pathType: Prefix
+                    backend:
+                        service:
+                            name: rabbitmq-svc # 确保和你之前的 Service 名字一致
+                            port:
+                                number: 15672

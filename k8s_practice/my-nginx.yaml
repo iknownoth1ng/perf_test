@@ -1,35 +1,95 @@
 # --- 第一部分：定义 Deployment (应用本身) ---
+# apiVersion: 指定使用的 Kubernetes API 版本，apps/v1 是用于工作负载资源的标准版本
 apiVersion: apps/v1
+# kind: 定义资源类型，在这里是 Deployment，用于管理 Pod 的副本和更新策略
 kind: Deployment
+# metadata: 包含资源的基本信息，如名称、标签等
 metadata:
-    name: nginx-deploy # 部署的名字
+    # name: Deployment 的唯一标识符，用于在集群中识别此部署
+    name: nginx-proxy
+# spec: 定义资源的期望状态和配置细节
 spec:
-    replicas: 3 # 副本数：先启动 1 个
+    # replicas: 指定期望运行的 Pod 副本数量
+    replicas: 1
+    # selector: 定义如何选择要管理的 Pod
     selector:
+        # matchLabels: 通过标签匹配要管理的 Pod
         matchLabels:
-            app: my-nginx # 标签选择器：管理所有贴了 "app=my-nginx" 标签的容器
+            # app: nginx-proxy: 选择带有 app=nginx-proxy 标签的 Pod
+            app: nginx-proxy
+    # template: 定义 Pod 模板，描述如何创建 Pod
     template:
+        # metadata: Pod 的元数据
         metadata:
+            # labels: 为 Pod 分配标签，使 Deployment 能够识别和管理这些 Pod
             labels:
-                app: my-nginx # 给容器贴上标签
+                # app: nginx-proxy: 给 Pod 打上 app=nginx-proxy 标签
+                app: nginx-proxy
+        # spec: Pod 规范，定义 Pod 的具体配置
         spec:
+            # containers: 定义 Pod 中运行的容器列表
             containers:
+                # - name: 容器名称
                 - name: nginx
+                  # image: 指定要使用的 Docker 镜像及版本
                   image: nginx:latest
+                  # ports: 定义容器暴露的端口
                   ports:
+                      # - containerPort: 容器内监听的端口号
                       - containerPort: 80
-
+                  # resources: 定义容器的资源请求和限制
+                  resources:
+                      # requests: 容器启动时保证分配的最小资源量
+                      requests:
+                          # memory: 最少需要分配的内存
+                          memory: "64Mi"
+                          # cpu: 最少需要分配的 CPU 资源
+                          cpu: "250m"
+                      # limits: 容器可以使用的最大资源量
+                      limits:
+                          # memory: 最大可以使用的内存
+                          memory: "128Mi"
+                          # cpu: 最大可以使用的 CPU 资源
+                          cpu: "500m"
+                  # volumeMounts: 定义卷挂载点，将存储卷映射到容器内的路径
+                  volumeMounts:
+                      # - name: 引用在 volumes 部分定义的卷名
+                      - name: config-volume
+                        # mountPath: 容器内挂载卷的路径
+                        mountPath: /etc/nginx/nginx.conf
+                        # subPath: 挂载卷中的特定文件或子目录，而不是整个卷
+                        subPath: nginx.conf # 只挂载这就一个文件，不覆盖整个目录
+            # volumes: 定义 Pod 级别的存储卷
+            volumes:
+                # - name: 卷的名称，供 volumeMounts 引用
+                - name: config-volume
+                  # configMap: 将 ConfigMap 数据作为卷提供给容器
+                  configMap:
+                      # name: 引用已存在的 ConfigMap 名称
+                      name: nginx-conf # 👈 引用刚才创建的 ConfigMap
 ---
 # --- 第二部分：定义 Service (网络入口) ---
+# apiVersion: 使用核心 v1 API 版本来定义 Service 资源
 apiVersion: v1
+# kind: 定义资源类型为 Service，提供网络访问入口
 kind: Service
+# metadata: Service 的元数据
 metadata:
+    # name: Service 的名称，其他服务可以通过这个名字发现此服务
     name: nginx-svc # 服务名字
+# spec: Service 的规格说明
 spec:
+    # type: 定义服务暴露方式，LoadBalancer 在云环境中创建外部负载均衡器
     type: LoadBalancer # 类型：LoadBalancer (Docker Desktop 会自动把这个暴露到 localhost)
+    # selector: 通过标签选择后端 Pod
     selector:
-        app: my-nginx # 重点：通过标签找到上面的 Deployment
+        # app: my-nginx: 选择带有 app=my-nginx 标签的 Pod（注意：这里应该与 deployment 中的标签一致）
+        app: nginx-proxy # 重点：通过标签找到上面的 Deployment
+    # ports: 定义服务暴露的端口
     ports:
+        # - protocol: 端口使用的协议
         - protocol: TCP
+          # port: 服务对外暴露的端口号，其他服务通过此端口访问服务
           port: 8032 # 外部访问端口
+          # targetPort: 服务转发流量到后端 Pod 的端口号
           targetPort: 80 # 容器内部端口
